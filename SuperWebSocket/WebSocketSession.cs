@@ -80,6 +80,15 @@ namespace SuperWebSocket
         void SendRawData(byte[] data, int offset, int length);
 
         /// <summary>
+        /// Try to send the raw binary response.
+        /// </summary>
+        /// <param name="data">The data.</param>
+        /// <param name="offset">The offset.</param>
+        /// <param name="length">The length.</param>
+        /// <returns>if the data to be sent is queued, return true, else the queue is full, then return false</returns>
+        bool TrySendRawData(byte[] data, int offset, int length);
+
+        /// <summary>
         /// Gets the app server.
         /// </summary>
         new IWebSocketServer AppServer { get; }
@@ -336,6 +345,16 @@ namespace SuperWebSocket
         }
 
         /// <summary>
+        /// Tries to send.
+        /// </summary>
+        /// <param name="message">The message to be sent.</param>
+        /// <returns></returns>
+        public override bool TrySend(string message)
+        {
+            return ProtocolProcessor.TrySendMessage(this, message);
+        }
+
+        /// <summary>
         /// Sends the response.
         /// </summary>
         /// <param name="data">The data.</param>
@@ -351,6 +370,23 @@ namespace SuperWebSocket
             }
 
             ProtocolProcessor.SendData(this, data, offset, length);
+        }
+
+        /// <summary>
+        /// Tries to send.
+        /// </summary>
+        /// <param name="segment">The segment to be sent.</param>
+        /// <returns></returns>
+        public override bool TrySend(ArraySegment<byte> segment)
+        {
+            if (!ProtocolProcessor.CanSendBinaryData)
+            {
+                if (Logger.IsErrorEnabled)
+                    Logger.Error("The websocket of this version cannot used for sending binary data!");
+                return false;
+            }
+
+            return ProtocolProcessor.TrySendData(this, segment.Array, segment.Offset, segment.Count);
         }
 
         /// <summary>
@@ -373,39 +409,19 @@ namespace SuperWebSocket
             base.Send(data, offset, length);
         }
 
-        /// <summary>
-        /// Sends the response.
-        /// </summary>
-        /// <param name="message">The message.</param>
-        /// <returns></returns>
-        [Obsolete("Use 'Send(string message)' instead")]
-        public override void SendResponse(string message)
-        {
-            this.Send(message);
-        }
 
         /// <summary>
-        /// Sends the response.
+        /// Try to send the raw binary response.
         /// </summary>
         /// <param name="data">The data.</param>
         /// <param name="offset">The offset.</param>
         /// <param name="length">The length.</param>
-        /// <returns></returns>
-        [Obsolete("Use 'Send(byte[] data, int offset, int length)' instead")]
-        public override void SendResponse(byte[] data, int offset, int length)
+        /// <returns>
+        /// if the data to be sent is queued, return true, else the queue is full, then return false
+        /// </returns>
+        bool IWebSocketSession.TrySendRawData(byte[] data, int offset, int length)
         {
-            this.Send(data, offset, length);
-        }
-
-        /// <summary>
-        /// Sends the response.
-        /// </summary>
-        /// <param name="segment">The segment.</param>
-        /// <returns></returns>
-        [Obsolete("Use 'Send(ArraySegment<byte> segment)' instead")]
-        public override void SendResponse(ArraySegment<byte> segment)
-        {
-            this.Send(segment);
+            return base.TrySend(new ArraySegment<byte>(data, offset, length));
         }
 
         /// <summary>
