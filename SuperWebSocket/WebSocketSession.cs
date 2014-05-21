@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Security.Authentication;
 using System.Text;
+using System.Threading;
 using SuperSocket.Common;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Command;
@@ -72,7 +73,7 @@ namespace SuperWebSocket
         bool Handshaked { get; }
 
         /// <summary>
-        /// Sends the raw binary response.
+        /// Sends the raw binary data to client.
         /// </summary>
         /// <param name="data">The data.</param>
         /// <param name="offset">The offset.</param>
@@ -80,7 +81,7 @@ namespace SuperWebSocket
         void SendRawData(byte[] data, int offset, int length);
 
         /// <summary>
-        /// Try to send the raw binary response.
+        /// Try to send the raw binary data to client.
         /// </summary>
         /// <param name="data">The data.</param>
         /// <param name="offset">The offset.</param>
@@ -188,10 +189,25 @@ namespace SuperWebSocket
 
         internal DateTime StartClosingHandshakeTime { get; private set; }
 
+        private const string m_CurrentTokenSlotName = "CurrentRequestToken";
+
+        internal LocalDataStoreSlot SetCurrentToken(string token)
+        {
+            var slot = Thread.GetNamedDataSlot(m_CurrentTokenSlotName);
+            Thread.SetData(slot, token);
+            return slot;
+        }
+
         /// <summary>
         /// Gets the current token.
         /// </summary>
-        public string CurrentToken { get; internal set; }
+        public string CurrentToken
+        {
+            get
+            {
+                return Thread.GetData(Thread.GetNamedDataSlot(m_CurrentTokenSlotName)) as string;
+            }
+        }
 
         /// <summary>
         /// Gets the app server.
@@ -320,7 +336,14 @@ namespace SuperWebSocket
                         else
                             value = string.Empty;
 
-                        cookies[key] = Uri.UnescapeDataString(value);
+                        try
+                        {
+                            cookies[key] = Uri.UnescapeDataString(value);
+                        }
+                        catch
+                        {
+                            Logger.Error(this, string.Format("Failed to read cookie, key: {0}, value: {1}.", key, value));
+                        }
                     }
                 }
             }
@@ -336,7 +359,7 @@ namespace SuperWebSocket
 
 
         /// <summary>
-        /// Sends the response.
+        /// Sends the message to client.
         /// </summary>
         /// <param name="message">The message.</param>
         public override void Send(string message)
@@ -355,7 +378,7 @@ namespace SuperWebSocket
         }
 
         /// <summary>
-        /// Sends the response.
+        /// Sends the data to client.
         /// </summary>
         /// <param name="data">The data.</param>
         /// <param name="offset">The offset.</param>
@@ -373,7 +396,7 @@ namespace SuperWebSocket
         }
 
         /// <summary>
-        /// Tries to send.
+        /// Tries to send the data over the websocket connection.
         /// </summary>
         /// <param name="segment">The segment to be sent.</param>
         /// <returns></returns>
@@ -390,7 +413,26 @@ namespace SuperWebSocket
         }
 
         /// <summary>
-        /// Sends the response.
+        /// Tries to send the data over the websocket connection.
+        /// </summary>
+        /// <param name="data">The data.</param>
+        /// <param name="offset">The offset.</param>
+        /// <param name="length">The length.</param>
+        /// <returns></returns>
+        public override bool TrySend(byte[] data, int offset, int length)
+        {
+            if (!ProtocolProcessor.CanSendBinaryData)
+            {
+                if (Logger.IsErrorEnabled)
+                    Logger.Error("The websocket of this version cannot used for sending binary data!");
+                return false;
+            }
+
+            return ProtocolProcessor.TrySendData(this, data, offset, length);
+        }
+
+        /// <summary>
+        /// Sends the segment to client.
         /// </summary>
         /// <param name="segment">The segment.</param>
         public override void Send(ArraySegment<byte> segment)
@@ -411,7 +453,7 @@ namespace SuperWebSocket
 
 
         /// <summary>
-        /// Try to send the raw binary response.
+        /// Try to send the raw binary data to client.
         /// </summary>
         /// <param name="data">The data.</param>
         /// <param name="offset">The offset.</param>
@@ -422,6 +464,16 @@ namespace SuperWebSocket
         bool IWebSocketSession.TrySendRawData(byte[] data, int offset, int length)
         {
             return base.TrySend(new ArraySegment<byte>(data, offset, length));
+        }
+
+        /// <summary>
+        /// Tries the send raw data segments.
+        /// </summary>
+        /// <param name="segments">The segments.</param>
+        /// <returns></returns>
+        internal bool TrySendRawData(IList<ArraySegment<byte>> segments)
+        {
+            return base.TrySend(segments);
         }
 
         /// <summary>
